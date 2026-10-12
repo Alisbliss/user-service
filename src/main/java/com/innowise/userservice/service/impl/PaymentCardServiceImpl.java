@@ -14,6 +14,7 @@ import com.innowise.userservice.repository.UserRepository;
 import com.innowise.userservice.repository.specification.PaymentCardSpecification;
 import com.innowise.userservice.service.PaymentCardService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -33,6 +34,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", key = "#request.userId")
     public PaymentCardResponse create(PaymentCardCreateRequest request) {
         User user = userRepository.findById(request.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("User " + request.getUserId() + " not found"));
@@ -77,6 +79,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", allEntries = true)
     public PaymentCardResponse update(Long id, PaymentCardUpdateRequest request) {
         PaymentCard card = cardRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
@@ -90,6 +93,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", allEntries = true)
     public void activate(Long id) {
         PaymentCard card = cardRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
@@ -99,6 +103,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", allEntries = true)
     public void deactivate(Long id) {
         PaymentCard card = cardRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
@@ -108,6 +113,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
 
     @Override
     @Transactional
+    @CacheEvict(value = "users", allEntries = true)
     public void delete(Long id) {
         if (!cardRepository.existsById(id)) {
             throw new ResourceNotFoundException("Card " + id + " not found");
