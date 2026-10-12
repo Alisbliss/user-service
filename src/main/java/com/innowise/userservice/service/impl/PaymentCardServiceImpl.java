@@ -5,6 +5,9 @@ import com.innowise.userservice.dto.PaymentCardResponse;
 import com.innowise.userservice.dto.PaymentCardUpdateRequest;
 import com.innowise.userservice.entity.PaymentCard;
 import com.innowise.userservice.entity.User;
+import com.innowise.userservice.exception.BusinessException;
+import com.innowise.userservice.exception.ConflictException;
+import com.innowise.userservice.exception.ResourceNotFoundException;
 import com.innowise.userservice.mapper.PaymentCardMapper;
 import com.innowise.userservice.repository.PaymentCardRepository;
 import com.innowise.userservice.repository.UserRepository;
@@ -32,12 +35,12 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional
     public PaymentCardResponse create(PaymentCardCreateRequest request) {
         User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new RuntimeException("User " + request.getUserId() + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User " + request.getUserId() + " not found"));
         if (cardRepository.countByUserId(user.getId()) >= MAX_CARDS_PER_USER) {
-            throw new RuntimeException("User already has " + MAX_CARDS_PER_USER + " cards");
+            throw new BusinessException("User already has " + MAX_CARDS_PER_USER + " cards");
         }
         if (cardRepository.existsByNumber(request.getNumber())) {
-            throw new RuntimeException("Card number already exists");
+            throw new ConflictException("Card number already exists");
         }
         PaymentCard card = cardMapper.toEntity(request);
         card.setUser(user);
@@ -48,7 +51,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional(readOnly = true)
     public PaymentCardResponse getById(Long id) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
         return cardMapper.toResponse(card);
     }
 
@@ -65,7 +68,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional(readOnly = true)
     public List<PaymentCardResponse> getByUserId(Long userId) {
         if (!userRepository.existsById(userId)) {
-            throw new RuntimeException("User " + userId + " not found");
+            throw new ResourceNotFoundException("User " + userId + " not found");
         }
         return cardRepository.findByUserId(userId).stream()
                 .map(cardMapper::toResponse)
@@ -76,10 +79,10 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional
     public PaymentCardResponse update(Long id, PaymentCardUpdateRequest request) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
         if (request.getNumber() != null && !request.getNumber().equals(card.getNumber())
                 && cardRepository.existsByNumber(request.getNumber())) {
-            throw new RuntimeException("Card number already in use");
+            throw new ConflictException("Card number already in use");
         }
         cardMapper.updateEntity(request, card);
         return cardMapper.toResponse(cardRepository.save(card));
@@ -89,7 +92,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional
     public void activate(Long id) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
         card.setActive(true);
         cardRepository.save(card);
     }
@@ -98,7 +101,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional
     public void deactivate(Long id) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
         card.setActive(false);
         cardRepository.save(card);
     }
@@ -107,7 +110,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional
     public void delete(Long id) {
         if (!cardRepository.existsById(id)) {
-            throw new RuntimeException("Card " + id + " not found");
+            throw new ResourceNotFoundException("Card " + id + " not found");
         }
         cardRepository.deleteById(id);
     }

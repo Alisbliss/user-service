@@ -4,6 +4,8 @@ import com.innowise.userservice.dto.UserCreateRequest;
 import com.innowise.userservice.dto.UserResponse;
 import com.innowise.userservice.dto.UserUpdateRequest;
 import com.innowise.userservice.entity.User;
+import com.innowise.userservice.exception.ConflictException;
+import com.innowise.userservice.exception.ResourceNotFoundException;
 import com.innowise.userservice.mapper.UserMapper;
 import com.innowise.userservice.repository.UserRepository;
 import com.innowise.userservice.repository.specification.UserSpecification;
@@ -25,7 +27,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponse create(UserCreateRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already exists");
+            throw new ConflictException("Email already exists");
         }
         User user = userMapper.toEntity(request);
         return userMapper.toResponse(userRepository.save(user));
@@ -35,7 +37,7 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public UserResponse getById(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
         return userMapper.toResponse(user);
     }
 
@@ -52,10 +54,10 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponse update(Long id, UserUpdateRequest request) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
         if (request.getEmail() != null && !request.getEmail().equals(user.getEmail())
                 && userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already in use");
+            throw new ConflictException("Email already in use");
         }
         userMapper.updateEntity(request, user);
         return userMapper.toResponse(userRepository.save(user));
@@ -65,7 +67,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void activate(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
         user.setActive(true);
         userRepository.save(user);
     }
@@ -74,7 +76,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void deactivate(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
         user.setActive(false);
         userRepository.save(user);
     }
@@ -83,7 +85,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void delete(Long id) {
         if (!userRepository.existsById(id)) {
-            throw new RuntimeException("User " + id + " not found");
+            throw new ResourceNotFoundException("User " + id + " not found");
         }
         userRepository.deleteById(id);
     }
