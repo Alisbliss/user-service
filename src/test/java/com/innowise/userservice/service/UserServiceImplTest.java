@@ -111,6 +111,7 @@ public class UserServiceImplTest {
         assertThat(result.getTotalElements()).isEqualTo(1);
     }
 
+    //update
     @Test
     void update_shouldUpdateUserWhenEmailIsFree() {
         User entity = new User();
