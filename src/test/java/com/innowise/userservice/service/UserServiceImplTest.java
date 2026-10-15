@@ -95,7 +95,7 @@ public class UserServiceImplTest {
 
         assertThatThrownBy(() -> userService.getById(2L))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("User 2 not found");
+                .hasMessageContaining("User not found: 2");
     }
 
     //getAll

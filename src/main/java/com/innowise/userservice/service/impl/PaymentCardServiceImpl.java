@@ -27,7 +27,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PaymentCardServiceImpl implements PaymentCardService {
     private static final long MAX_CARDS_PER_USER = 5;
-
+    private static final String CARD_NOT_FOUND = "Card not found: ";
     private final PaymentCardRepository cardRepository;
     private final UserRepository userRepository;
     private final PaymentCardMapper cardMapper;
@@ -53,7 +53,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @Transactional(readOnly = true)
     public PaymentCardResponse getById(Long id) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(CARD_NOT_FOUND + id));
         return cardMapper.toResponse(card);
     }
 
@@ -82,7 +82,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @CacheEvict(value = "users", allEntries = true)
     public PaymentCardResponse update(Long id, PaymentCardUpdateRequest request) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(CARD_NOT_FOUND + id));
         if (request.getNumber() != null && !request.getNumber().equals(card.getNumber())
                 && cardRepository.existsByNumber(request.getNumber())) {
             throw new ConflictException("Card number already in use");
@@ -96,7 +96,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @CacheEvict(value = "users", allEntries = true)
     public void activate(Long id) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(CARD_NOT_FOUND + id));
         card.setActive(true);
         cardRepository.save(card);
     }
@@ -106,7 +106,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @CacheEvict(value = "users", allEntries = true)
     public void deactivate(Long id) {
         PaymentCard card = cardRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Card " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(CARD_NOT_FOUND + id));
         card.setActive(false);
         cardRepository.save(card);
     }
@@ -116,7 +116,7 @@ public class PaymentCardServiceImpl implements PaymentCardService {
     @CacheEvict(value = "users", allEntries = true)
     public void delete(Long id) {
         if (!cardRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Card " + id + " not found");
+            throw new ResourceNotFoundException(CARD_NOT_FOUND + id);
         }
         cardRepository.deleteById(id);
     }

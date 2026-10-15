@@ -1,7 +1,6 @@
 package com.innowise.userservice.repository;
 
 import com.innowise.userservice.entity.User;
-import com.innowise.userservice.repository.specification.UserSpecification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;

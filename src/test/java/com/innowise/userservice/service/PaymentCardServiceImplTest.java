@@ -204,7 +204,6 @@ public class PaymentCardServiceImplTest {
     //delete
     @Test
     void delete_shouldRemove() {
-        PaymentCard card = new PaymentCard();
         when(cardRepository.existsById(1L)).thenReturn(true);
         cardService.delete(1L);
 

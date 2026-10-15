@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
+    private static final String USER_NOT_FOUND = "User not found: ";
     private final UserRepository userRepository;
     private final UserMapper userMapper;
 
@@ -41,7 +42,7 @@ public class UserServiceImpl implements UserService {
     @Cacheable(value = "users", key = "#id")
     public UserResponse getById(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(USER_NOT_FOUND + id));
         return userMapper.toResponse(user);
     }
 
@@ -59,7 +60,7 @@ public class UserServiceImpl implements UserService {
     @CachePut(value = "users", key = "#id")
     public UserResponse update(Long id, UserUpdateRequest request) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(USER_NOT_FOUND + id));
         if (request.getEmail() != null && !request.getEmail().equals(user.getEmail())
                 && userRepository.existsByEmail(request.getEmail())) {
             throw new ConflictException("Email already in use");
@@ -73,7 +74,7 @@ public class UserServiceImpl implements UserService {
     @CacheEvict(value = "users", key = "#id")
     public void activate(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(USER_NOT_FOUND + id));
         user.setActive(true);
         userRepository.save(user);
     }
@@ -83,7 +84,7 @@ public class UserServiceImpl implements UserService {
     @CacheEvict(value = "users", key = "#id")
     public void deactivate(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("User " + id + " not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(USER_NOT_FOUND + id));
         user.setActive(false);
         userRepository.save(user);
     }
@@ -93,7 +94,7 @@ public class UserServiceImpl implements UserService {
     @CacheEvict(value = "users", key = "#id")
     public void delete(Long id) {
         if (!userRepository.existsById(id)) {
-            throw new ResourceNotFoundException("User " + id + " not found");
+            throw new ResourceNotFoundException(USER_NOT_FOUND + id);
         }
         userRepository.deleteById(id);
     }
