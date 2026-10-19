@@ -11,3 +11,5 @@ spring:
     enabled: true
   cache:
     type: redis
+jwt:
+  secret: ${JWT_SECRET:my-super-secret-key-that-is-at-least-256-bits-long-12345}
