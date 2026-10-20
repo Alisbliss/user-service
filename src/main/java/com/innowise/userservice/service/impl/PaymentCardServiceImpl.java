@@ -120,4 +120,12 @@ public class PaymentCardServiceImpl implements PaymentCardService {
         }
         cardRepository.deleteById(id);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isCardOwner(Long cardId, Long userId) {
+        return cardRepository.findById(cardId)
+                .map(card -> card.getUser().getId().equals(userId))
+                .orElse(false);
+    }
 }

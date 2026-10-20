@@ -17,4 +17,5 @@ public interface PaymentCardService {
     void activate(Long id);
     void deactivate(Long id);
     void delete(Long id);
+    boolean isCardOwner(Long cardId, Long userId);
 }
