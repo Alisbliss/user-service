@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-@Service
+@Service("paymentCardService")
 @RequiredArgsConstructor
 public class PaymentCardServiceImpl implements PaymentCardService {
     private static final long MAX_CARDS_PER_USER = 5;

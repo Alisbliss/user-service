@@ -3,6 +3,8 @@ package com.innowise.userservice;
 import com.innowise.userservice.dto.UserCreateRequest;
 import com.innowise.userservice.dto.UserResponse;
 import com.innowise.userservice.repository.UserRepository;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -22,7 +24,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.ObjectMapper;
 
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Date;
 import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,12 +71,35 @@ public class UserFlowIntegrationTest {
     private CacheManager cacheManager;
     private Cache usersCache;
 
+    private String userToken;
+    private String adminToken;
+    private Long userId;
+
     @BeforeEach
-    void clean() {
+    void clean() throws Exception {
         userRepository.deleteAll();
         Cache cache = Objects.requireNonNull(cacheManager.getCache("users"));
         cache.clear();
         this.usersCache = cache;
+
+        this.adminToken = generateToken(1L, "ADMIN");
+        UserCreateRequest request = createRequest();
+        request.setEmail("setup-user@example.com");
+        this.userId = createUser(request);
+        this.userToken = generateToken(this.userId, "USER");
+    }
+
+    private String generateToken(Long userId, String role) {
+        String secret = "my-super-secret-key-that-is-at-least-256-bits-long-12345";
+        SecretKey key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        return Jwts.builder()
+                .subject("test@example.com")
+                .claim("userId", userId)
+                .claim("role", role)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 900000))
+                .signWith(key)
+                .compact();
     }
 
     private UserCreateRequest createRequest() {
@@ -86,6 +114,7 @@ public class UserFlowIntegrationTest {
 
     private Long createUser(UserCreateRequest request) throws Exception {
         String json = mockMvc.perform(post("/api/users")
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -97,9 +126,9 @@ public class UserFlowIntegrationTest {
     @Test
     void fullUserFlow_shouldCreateGetUpdateDelete() throws Exception {
         UserCreateRequest request = createRequest();
-
         //CREATE-201
         String json = mockMvc.perform(post("/api/users")
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -109,7 +138,8 @@ public class UserFlowIntegrationTest {
         Long id = objectMapper.readTree(json).get("id").asLong();
 
         //GET-200
-        mockMvc.perform(get("/api/users/{id}", id))
+        mockMvc.perform(get("/api/users/{id}", id)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Alex"))
                 .andExpect(jsonPath("$.surname").value("Aleksandrov"));
@@ -118,6 +148,7 @@ public class UserFlowIntegrationTest {
 
         //UPDATE-200
         mockMvc.perform(put("/api/users/{id}", id)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Kostya\",\"surname\":\"Kostya\"}"))
                 .andExpect(status().isOk())
@@ -133,7 +164,8 @@ public class UserFlowIntegrationTest {
         assertThat(cachedUser.getName()).isEqualTo("Kostya");
 
         //DELETE-204
-        mockMvc.perform(delete("/api/users/{id}", id))
+        mockMvc.perform(delete("/api/users/{id}", id)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
 
         //assert: removed from DB and cache
@@ -150,6 +182,7 @@ public class UserFlowIntegrationTest {
 
         //POST duplicate-409
         mockMvc.perform(post("/api/users")
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createRequest())))
                 .andExpect(status().isConflict());
@@ -158,7 +191,8 @@ public class UserFlowIntegrationTest {
     //GET-404
     @Test
     void getUser_shouldReturn404WhenNotFound() throws Exception {
-        mockMvc.perform(get("/api/users/{id}", 2))
+        mockMvc.perform(get("/api/users/{id}", 2)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }
 
@@ -166,6 +200,7 @@ public class UserFlowIntegrationTest {
     @Test
     void createUser_shouldReturn400WhenValidationFails() throws Exception {
         mockMvc.perform(post("/api/users")
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"\",\"surname\":\"\",\"email\":\"bad\"}"))
                 .andExpect(status().isBadRequest());
@@ -174,15 +209,13 @@ public class UserFlowIntegrationTest {
     //GET all-200
     @Test
     void getAll_shouldReturnPagedUsers() throws Exception {
-        //CREATE-201
-        createUser(createRequest());
-
         UserCreateRequest second = createRequest();
         second.setEmail("second@example.com");
         createUser(second);
 
         //GET all-200
         mockMvc.perform(get("/api/users")
+                        .header("Authorization", "Bearer " + adminToken)
                         .param("page", "0")
                         .param("size", "10"))
                 .andExpect(status().isOk())
@@ -193,34 +226,30 @@ public class UserFlowIntegrationTest {
     //GET filter by name-200
     @Test
     void getAll_shouldFilterByName() throws Exception {
-        //CREATE-201
-        createUser(createRequest());
-
         UserCreateRequest second = createRequest();
         second.setName("Ivan");
         second.setEmail("ivan@example.com");
         createUser(second);
 
         //GET filter-200
-        mockMvc.perform(get("/api/users").param("name", "Alex"))
+        mockMvc.perform(get("/api/users").param("name", "Ivan")
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
-                .andExpect(jsonPath("$.content[0].name").value("Alex"));
+                .andExpect(jsonPath("$.content[0].name").value("Ivan"));
     }
 
     //GET filter by surname-200
     @Test
     void getAll_shouldFilterBySurname() throws Exception {
-        //CREATE-201
-        createUser(createRequest());
-
         UserCreateRequest second = createRequest();
         second.setSurname("Petrov");
         second.setEmail("petrov@example.com");
         createUser(second);
 
         //GET filter-200
-        mockMvc.perform(get("/api/users").param("surname", "Petrov"))
+        mockMvc.perform(get("/api/users").param("surname", "Petrov")
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].surname").value("Petrov"));
@@ -229,11 +258,9 @@ public class UserFlowIntegrationTest {
     //UPDATE-200
     @Test
     void updateUser_shouldReturn200() throws Exception {
-        //CREATE-201
-        Long id = createUser(createRequest());
-
         //UPDATE-200
-        mockMvc.perform(put("/api/users/{id}", id)
+        mockMvc.perform(put("/api/users/{id}", this.userId)
+                        .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"Updated\"}"))
                 .andExpect(status().isOk())
@@ -243,7 +270,8 @@ public class UserFlowIntegrationTest {
     //UPDATE-404
     @Test
     void updateUser_shouldReturn404WhenNotFound() throws Exception {
-        mockMvc.perform(put("/api/users/{id}", 9999)
+        mockMvc.perform(put("/api/users/{id}", 2)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"New\"}"))
                 .andExpect(status().isNotFound());
@@ -252,16 +280,14 @@ public class UserFlowIntegrationTest {
     //UPDATE email conflict-409
     @Test
     void updateUser_shouldReturn409WhenEmailTaken() throws Exception {
-        //CREATE user1-201
-        Long id1 = createUser(createRequest());
-
         //CREATE user2-201
         UserCreateRequest second = createRequest();
         second.setEmail("second@example.com");
         createUser(second);
 
         //UPDATE user1 with user2 email-409
-        mockMvc.perform(put("/api/users/{id}", id1)
+        mockMvc.perform(put("/api/users/{id}", this.userId)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"second@example.com\"}"))
                 .andExpect(status().isConflict());
@@ -270,19 +296,19 @@ public class UserFlowIntegrationTest {
     //ACTIVATE-204
     @Test
     void activateUser_shouldReturn204() throws Exception {
-        //CREATE-201
-        Long id = createUser(createRequest());
-
         //DEACTIVATE-204
-        mockMvc.perform(patch("/api/users/{id}/deactivate", id))
+        mockMvc.perform(patch("/api/users/{id}/deactivate", this.userId)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
 
         //ACTIVATE-204
-        mockMvc.perform(patch("/api/users/{id}/activate", id))
+        mockMvc.perform(patch("/api/users/{id}/activate", this.userId)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
 
         //GET after activate-200
-        mockMvc.perform(get("/api/users/{id}", id))
+        mockMvc.perform(get("/api/users/{id}", this.userId)
+                .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(true));
     }
@@ -290,15 +316,14 @@ public class UserFlowIntegrationTest {
     //DEACTIVATE-204
     @Test
     void deactivateUser_shouldReturn204() throws Exception {
-        //CREATE-201
-        Long id = createUser(createRequest());
-
         //DEACTIVATE-204
-        mockMvc.perform(patch("/api/users/{id}/deactivate", id))
+        mockMvc.perform(patch("/api/users/{id}/deactivate", this.userId)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNoContent());
 
         //GET after deactivate-200
-        mockMvc.perform(get("/api/users/{id}", id))
+        mockMvc.perform(get("/api/users/{id}", this.userId)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
     }
@@ -306,32 +331,34 @@ public class UserFlowIntegrationTest {
     //ACTIVATE-404
     @Test
     void activateUser_shouldReturn404WhenNotFound() throws Exception {
-        mockMvc.perform(patch("/api/users/{id}/activate", 9))
+        mockMvc.perform(patch("/api/users/{id}/activate", 9)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }
 
     //DEACTIVATE-404
     @Test
     void deactivateUser_shouldReturn404WhenNotFound() throws Exception {
-        mockMvc.perform(patch("/api/users/{id}/deactivate", 9))
+        mockMvc.perform(patch("/api/users/{id}/deactivate", 9)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }
 
     //cache case
     @Test
     void getById_shouldReturnFromCacheOnSecondCall() throws Exception {
-        //CREATE-201
-        Long id = createUser(createRequest());
         Mockito.reset(userRepository);
 
         //GET first-200 from DB
-        mockMvc.perform(get("/api/users/{id}", id))
+        mockMvc.perform(get("/api/users/{id}", this.userId)
+                .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk());
-        verify(userRepository, times(1)).findById(id);
+        verify(userRepository, times(1)).findById(this.userId);
 
         //GET second-200 from cache
-        mockMvc.perform(get("/api/users/{id}", id))
+        mockMvc.perform(get("/api/users/{id}", this.userId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk());
-        verify(userRepository, times(1)).findById(id);
+        verify(userRepository, times(1)).findById(this.userId);
     }
 }

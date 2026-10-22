@@ -4,6 +4,8 @@ import com.innowise.userservice.dto.PaymentCardCreateRequest;
 import com.innowise.userservice.dto.UserCreateRequest;
 import com.innowise.userservice.repository.PaymentCardRepository;
 import com.innowise.userservice.repository.UserRepository;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +20,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import tools.jackson.databind.ObjectMapper;
 
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Date;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -53,12 +58,15 @@ public class PaymentCardFlowIntegrationTest {
     private PaymentCardRepository cardRepository;
 
     private Long userId;
+    private String userToken;
+    private String adminToken;
 
     @BeforeEach
     void setUp() throws Exception {
         cardRepository.deleteAll();
         userRepository.deleteAll();
 
+        this.adminToken = generateToken(1L, "ADMIN");
         UserCreateRequest userRequest = new UserCreateRequest();
         userRequest.setName("Alex");
         userRequest.setSurname("Aleksandrov");
@@ -67,11 +75,26 @@ public class PaymentCardFlowIntegrationTest {
         userRequest.setActive(true);
 
         String json = mockMvc.perform(post("/api/users")
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(userRequest)))
                 .andReturn().getResponse().getContentAsString();
 
         userId = objectMapper.readTree(json).get("id").asLong();
+        this.userToken = generateToken(this.userId, "USER");
+    }
+
+    private String generateToken(Long userId, String role) {
+        String secret = "my-super-secret-key-that-is-at-least-256-bits-long-12345";
+        SecretKey key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        return Jwts.builder()
+                .subject("test@example.com")
+                .claim("userId", userId)
+                .claim("role", role)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + 900000))
+                .signWith(key)
+                .compact();
     }
 
     private PaymentCardCreateRequest buildCard(String number) {
@@ -86,6 +109,7 @@ public class PaymentCardFlowIntegrationTest {
 
     private Long createCard(String number) throws Exception {
         String json = mockMvc.perform(post("/api/cards")
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(buildCard(number))))
                 .andExpect(status().isCreated())
@@ -105,6 +129,7 @@ public class PaymentCardFlowIntegrationTest {
 
         //CREATE-201
         String json = mockMvc.perform(post("/api/cards")
+                        .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(card)))
                 .andExpect(status().isCreated())
@@ -114,16 +139,19 @@ public class PaymentCardFlowIntegrationTest {
         Long cardId = objectMapper.readTree(json).get("id").asLong();
 
         //GET by id-200
-        mockMvc.perform(get("/api/cards/{id}", cardId))
+        mockMvc.perform(get("/api/cards/{id}", cardId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk());
 
         //GET cards by user-200
-        mockMvc.perform(get("/api/cards/user/{userId}", userId))
+        mockMvc.perform(get("/api/cards/user/{userId}", userId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
 
         //DELETE-204
-        mockMvc.perform(delete("/api/cards/{id}", cardId))
+        mockMvc.perform(delete("/api/cards/{id}", cardId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isNoContent());
     }
 
@@ -140,6 +168,7 @@ public class PaymentCardFlowIntegrationTest {
         for (String number : numbers) {
             //CREATE 5 cards-201
             mockMvc.perform(post("/api/cards")
+                            .header("Authorization", "Bearer " + userToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(buildCard(number))))
                     .andExpect(status().isCreated());
@@ -147,6 +176,7 @@ public class PaymentCardFlowIntegrationTest {
 
         //CREATE 6th card-422
         mockMvc.perform(post("/api/cards")
+                        .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(buildCard("4276123456781006"))))
                 .andExpect(status().isUnprocessableContent());
@@ -161,7 +191,8 @@ public class PaymentCardFlowIntegrationTest {
         //GET all-200
         mockMvc.perform(get("/api/cards")
                         .param("page", "0")
-                        .param("size", "10"))
+                        .param("size", "10")
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.totalElements").value(1));
@@ -176,7 +207,8 @@ public class PaymentCardFlowIntegrationTest {
         //GET filter-200
         mockMvc.perform(get("/api/cards")
                         .param("name", "Alex")
-                        .param("surname", "Aleksandrov"))
+                        .param("surname", "Aleksandrov")
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1));
     }
@@ -184,14 +216,16 @@ public class PaymentCardFlowIntegrationTest {
     //GET by id-404
     @Test
     void getCardById_shouldReturn404WhenNotFound() throws Exception {
-        mockMvc.perform(get("/api/cards/{id}", 9999))
+        mockMvc.perform(get("/api/cards/{id}", 9)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }
 
     //GET by user-404
     @Test
     void getCardsByUserId_shouldReturn404WhenUserNotFound() throws Exception {
-        mockMvc.perform(get("/api/cards/user/{userId}", 9999))
+        mockMvc.perform(get("/api/cards/user/{userId}", 9)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }
 
@@ -203,6 +237,7 @@ public class PaymentCardFlowIntegrationTest {
 
         //UPDATE-200
         mockMvc.perform(put("/api/cards/{id}", cardId)
+                        .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"holder\":\"NEW HOLDER\"}"))
                 .andExpect(status().isOk())
@@ -213,6 +248,7 @@ public class PaymentCardFlowIntegrationTest {
     @Test
     void updateCard_shouldReturn404WhenNotFound() throws Exception {
         mockMvc.perform(put("/api/cards/{id}", 9999)
+                        .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"holder\":\"X\"}"))
                 .andExpect(status().isNotFound());
@@ -229,6 +265,7 @@ public class PaymentCardFlowIntegrationTest {
 
         //UPDATE card1 with card2 number-409
         mockMvc.perform(put("/api/cards/{id}", cardId1)
+                        .header("Authorization", "Bearer " + userToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"number\":\"4276123456782005\"}"))
                 .andExpect(status().isConflict());
@@ -241,15 +278,18 @@ public class PaymentCardFlowIntegrationTest {
         Long cardId = createCard("4276123456782006");
 
         //DEACTIVATE-204
-        mockMvc.perform(patch("/api/cards/{id}/deactivate", cardId))
+        mockMvc.perform(patch("/api/cards/{id}/deactivate", cardId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isNoContent());
 
         //ACTIVATE-204
-        mockMvc.perform(patch("/api/cards/{id}/activate", cardId))
+        mockMvc.perform(patch("/api/cards/{id}/activate", cardId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isNoContent());
 
         //GET after activate-200
-        mockMvc.perform(get("/api/cards/{id}", cardId))
+        mockMvc.perform(get("/api/cards/{id}", cardId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(true));
     }
@@ -261,11 +301,13 @@ public class PaymentCardFlowIntegrationTest {
         Long cardId = createCard("4276123456782007");
 
         //DEACTIVATE-204
-        mockMvc.perform(patch("/api/cards/{id}/deactivate", cardId))
+        mockMvc.perform(patch("/api/cards/{id}/deactivate", cardId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isNoContent());
 
         //GET after deactivate-200
-        mockMvc.perform(get("/api/cards/{id}", cardId))
+        mockMvc.perform(get("/api/cards/{id}", cardId)
+                        .header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
     }
@@ -273,14 +315,16 @@ public class PaymentCardFlowIntegrationTest {
     //ACTIVATE-404
     @Test
     void activateCard_shouldReturn404WhenNotFound() throws Exception {
-        mockMvc.perform(patch("/api/cards/{id}/activate", 9999))
+        mockMvc.perform(patch("/api/cards/{id}/activate", 9)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }
 
     //DEACTIVATE-404
     @Test
     void deactivateCard_shouldReturn404WhenNotFound() throws Exception {
-        mockMvc.perform(patch("/api/cards/{id}/deactivate", 9999))
+        mockMvc.perform(patch("/api/cards/{id}/deactivate", 9)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isNotFound());
     }
 }
